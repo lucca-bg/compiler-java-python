@@ -231,6 +231,7 @@ public class Compiler {
 
     // Variáveis utilizadas para o semântico
     private static String variableName;
+    private static String currentType;
     private static String lastLexeme;
     private static StringBuffer codePython = new StringBuffer();
     private static int indentationLevel = 0;
@@ -238,7 +239,7 @@ public class Compiler {
     private static SemanticStackNode nodo_1;
     private static SemanticStackNode nodo_2;
     private static SemanticStack semanticStack = new SemanticStack();
-    private static HashMap<String, Integer> symbolsTable = new HashMap<String, Integer>();
+    private static HashMap<String, String> symbolsTable = new HashMap<String, String>();
     private static String variavel;
 
     // Variáveis utilizadas para geração do "for" em Python
@@ -246,6 +247,11 @@ public class Compiler {
     private static String forStart;
     private static String forEnd;
     private static String forStep;
+    private static boolean insideForHeader = false;
+    private static boolean readingForStep = false;
+
+    // Controle de switch/case
+    private static boolean switchFirstCase = true;
 
     // Ações semânticas
     private enum SemanticAction {
@@ -273,7 +279,11 @@ public class Compiler {
         DIFFERENT(19),
         PRINT(20),
         LESS_TAB(22),
-        MORE_TAB(23);
+        MORE_TAB(23),
+        SWITCH_BEGIN(24),
+        CASE_BEGIN(25),
+        DEFAULT_BEGIN(26),
+        CASE_BREAK(27);
 
         private final int code;
 
@@ -591,6 +601,7 @@ public class Compiler {
     // <TYPE> ::= 'boolean'
     private static void type() throws IOException, LexicalErrorException, SyntacticErrorException {
         if (token == T_INT || token == T_DOUBLE || token == T_STRING || token == T_BOOLEAN) {
+            currentType = lexeme;
             searchNextToken();
         } else {
             logSyntaxError("Esperava um tipo de variável, mas encontrou: " + lexeme);
@@ -723,16 +734,24 @@ public class Compiler {
         if (token == T_FOR) {
             searchNextToken();
             if (token == T_PARENTHESIS_OPEN) {
+                insideForHeader = true;
                 searchNextToken();
                 assignment();
+                forVariable = nodo_1.getCodeLowerCase();
+                forStart = nodo_2.getCodeLowerCase();
                 if (token == T_SEMICOLON) {
                     searchNextToken();
                     condition();
+                    forEnd = nodo_2.getCodeLowerCase();
                     if (token == T_SEMICOLON) {
+                        readingForStep = true;
                         searchNextToken();
                         assignment();
+                        readingForStep = false;
+                        insideForHeader = false;
                         if (token == T_PARENTHESIS_CLOSE) {
                             searchNextToken();
+                            semanticRule(SemanticAction.FOR_BEGIN);
                             if (token == T_BRACE_OPEN) {
                                 searchNextToken();
                                 cmds();
@@ -772,6 +791,7 @@ public class Compiler {
             if (token == T_PARENTHESIS_OPEN) {
                 searchNextToken();
                 id();
+                semanticRule(SemanticAction.SWITCH_BEGIN);
                 if (token == T_PARENTHESIS_CLOSE) {
                     searchNextToken();
                     if (token == T_BRACE_OPEN) {
@@ -818,19 +838,21 @@ public class Compiler {
             searchNextToken();
             if (token == T_NUMBER) {
                 searchNextToken();
+                semanticRule(SemanticAction.NUMBER);
+                semanticRule(SemanticAction.CASE_BEGIN);
                 if (token == T_COLON) {
                     searchNextToken();
                     cmds();
                     if (token == T_BREAK) {
                         searchNextToken();
+                        semanticRule(SemanticAction.CASE_BREAK);
                         if (token == T_SEMICOLON) {
                             searchNextToken();
                         } else {
                             logSyntaxError("Esperava ';', mas encontrou: " + lexeme);
                         }
-                    } else {
-                        logSyntaxError("Esperava 'break', mas encontrou: " + lexeme);
                     }
+                    semanticRule(SemanticAction.LESS_TAB);
                 } else {
                     logSyntaxError("Esperava ':', mas encontrou: " + lexeme);
                 }
@@ -841,7 +863,9 @@ public class Compiler {
             searchNextToken();
             if (token == T_COLON) {
                 searchNextToken();
+                semanticRule(SemanticAction.DEFAULT_BEGIN);
                 cmds();
+                semanticRule(SemanticAction.LESS_TAB);
             } else {
                 logSyntaxError("Esperava ':', mas encontrou: " + lexeme);
             }
@@ -1553,7 +1577,9 @@ public class Compiler {
                 codePython.append("# Código Python Gerado Automaticamente\n\n");
                 break;
             case VARIABLE_DECLARE:
-                insertIntoSymbolsTable(variableName);
+                insertIntoSymbolsTable(variableName, currentType);
+                codePython.append(tabulation(indentationLevel));
+                codePython.append(variableName + " = " + pythonDefaultValue(currentType) + "\n");
                 break;
             case VARIABLE_USAGE:
                 if (checkExistsInSymbolsTable(variableName)) {
@@ -1561,10 +1587,44 @@ public class Compiler {
                 }
                 break;
             case ASSIGNMENT:
+                        
                 nodo_2 = semanticStack.pop();
                 nodo_1 = semanticStack.pop();
-                codePython.append(tabulation(indentationLevel));
-                codePython.append(nodo_1.getCodeLowerCase() + " = " + nodo_2.getCodeLowerCase() + "\n");
+                                   
+                if(readingForStep){  
+                    String expression = nodo_2.getCodeLowerCase();
+                
+                    if(expression.contains("+")){
+                    
+                        forStep = expression.substring(
+                            expression.indexOf("+") + 1
+                        ).trim();
+                    
+                    }
+                    else if(expression.contains("-")){
+                    
+                        forStep = "-" + expression.substring(
+                            expression.indexOf("-") + 1
+                        ).trim();
+                    
+                    }
+                    else{
+                    
+                        forStep = "1";
+                    
+                    }
+                
+                }
+                else if(!insideForHeader){
+                
+                    codePython.append(tabulation(indentationLevel));
+                    codePython.append(
+                        nodo_1.getCodeLowerCase()
+                        + " = "
+                        + nodo_2.getCodeLowerCase()
+                        + "\n"
+                    );
+                }
                 break;
             case IF_BEGIN:
                 nodo_1 = semanticStack.pop();
@@ -1666,6 +1726,29 @@ public class Compiler {
             case MORE_TAB:
                 indentationLevel++;
                 break;
+            case SWITCH_BEGIN:
+                variavel = variableName;
+                switchFirstCase = true;
+                break;
+            case CASE_BEGIN:
+                nodo_1 = semanticStack.pop();
+                codePython.append(tabulation(indentationLevel));
+                if (switchFirstCase) {
+                    codePython.append("if " + variavel + " == " + nodo_1.getCodeLowerCase() + ":\n");
+                    switchFirstCase = false;
+                } else {
+                    codePython.append("elif " + variavel + " == " + nodo_1.getCodeLowerCase() + ":\n");
+                }
+                indentationLevel++;
+                break;
+            case DEFAULT_BEGIN:
+                codePython.append(tabulation(indentationLevel));
+                codePython.append("else:\n");
+                indentationLevel++;
+                break;
+            case CASE_BREAK:
+                // break do switch Java não possui equivalente em Python
+                break;
         }
     }
 
@@ -1688,13 +1771,22 @@ public class Compiler {
      * Insere uma variável na tabela de símbolos
      * 
      * @param lastLexeme Último lexema reconhecido
+     * @param variableType Tipo da variável em Java
      * @throws SemanticErrorException
      */
-    private static void insertIntoSymbolsTable(String lastLexeme) throws SemanticErrorException {
+    private static void insertIntoSymbolsTable(String lastLexeme, String variableType)
+            throws SemanticErrorException {
+            
         if (symbolsTable.containsKey(lastLexeme)) {
-            throw new SemanticErrorException("Variável " + lastLexeme + " já declarada!\nLinha: " + currentLine);
+        
+            throw new SemanticErrorException(
+                "Variável " + lastLexeme + " já declarada!\nLinha: " + currentLine
+            );
+        
         } else {
-            symbolsTable.put(lastLexeme, 0);
+        
+            symbolsTable.put(lastLexeme, variableType);
+        
         }
     }
 
@@ -1757,6 +1849,32 @@ public class Compiler {
 
         throw new SyntacticErrorException(message.toString());
     }
+
+    /**
+     * Define valor padrão para variáveis não inicializadas em Python, de acordo com seu tipo em Java
+     * 
+     * @param type Tipo da variável em Java
+     */
+    private static String pythonDefaultValue(String type){
+
+        switch(type){
+
+            case "int":
+                return "0";
+
+            case "double":
+                return "0.0";
+
+            case "String":
+                return "\"\"";
+
+            case "boolean":
+                return "False";
+
+            default:
+                return "None";
+        }
+    }    
 
     /**
      * Registra um erro semântico encontrado durante a análise semântica
