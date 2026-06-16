@@ -204,6 +204,8 @@ public class Compiler {
     private static final int T_STRING_LITERAL = 49;
     private static final int T_INCREMENT = 50;
     private static final int T_DECREMENT = 51;
+    private static final int T_TRUE = 52;
+    private static final int T_FALSE = 53;
     private static final int T_END_SOURCE = 90;
     private static final int T_LEXICAL_ERROR = 98;
     private static final int T_NULL = 99;
@@ -290,7 +292,8 @@ public class Compiler {
         CASE_BREAK(27),
         INCREMENT(30),
         DECREMENT(31),
-        STRING_LITERAL(32);
+        STRING_LITERAL(32),
+        BOOLEAN_LITERAL(33);
 
         private final int code;
 
@@ -619,17 +622,41 @@ public class Compiler {
 
     // <IDS> ::= <ID> ',' <IDS>
     // <IDS> ::= <ID>
+    // <IDS> ::= <ID> '=' <E>
     private static void ids()
             throws IOException, LexicalErrorException, SyntacticErrorException, SemanticErrorException {
         id();
-        semanticRule(SemanticAction.VARIABLE_DECLARE);
+        
+        // Check if there's an assignment in the declaration
+        if (token == T_EQUAL) {
+            searchNextToken();
+            e();
+            semanticRule(SemanticAction.VARIABLE_DECLARE);
+            // Manually generate assignment code for initialized variables
+            nodo_2 = semanticStack.pop();
+            codePython.append(tabulation(indentationLevel));
+            codePython.append(variableName + " = " + nodo_2.getCodeLowerCase() + "\n");
+        } else {
+            semanticRule(SemanticAction.VARIABLE_DECLARE);
+        }
+        
         while (token == T_COMMA) {
             searchNextToken();
             id();
-            semanticRule(SemanticAction.VARIABLE_DECLARE);
+            
+            if (token == T_EQUAL) {
+                searchNextToken();
+                e();
+                semanticRule(SemanticAction.VARIABLE_DECLARE);
+                nodo_2 = semanticStack.pop();
+                codePython.append(tabulation(indentationLevel));
+                codePython.append(variableName + " = " + nodo_2.getCodeLowerCase() + "\n");
+            } else {
+                semanticRule(SemanticAction.VARIABLE_DECLARE);
+            }
         }
 
-        accumulateRecognizedSyntacticRule("<IDS> ::= <ID> ',' <IDS> | <ID>");
+        accumulateRecognizedSyntacticRule("<IDS> ::= <ID> ',' <IDS> | <ID> | <ID> '=' <E>");
     }
 
     // <CMDS> ::= <CMD> <CMDS>
@@ -1159,7 +1186,17 @@ public class Compiler {
                     "<F> ::= <STRING_LITERAL>"
                 );
             
-                break;                
+                break;
+            case T_TRUE:
+                semanticRule(SemanticAction.BOOLEAN_LITERAL);
+                searchNextToken();
+                accumulateRecognizedSyntacticRule("<F> ::= 'true'");
+                break;
+            case T_FALSE:
+                semanticRule(SemanticAction.BOOLEAN_LITERAL);
+                searchNextToken();
+                accumulateRecognizedSyntacticRule("<F> ::= 'false'");
+                break;
             default:
                 logSyntaxError("Fator inválido. Encontrou: " + lexeme);
         }
@@ -1273,6 +1310,10 @@ public class Compiler {
                 token = T_OUT;
             else if (lexeme.equalsIgnoreCase("println"))
                 token = T_PRINTLN;
+            else if (lexeme.equalsIgnoreCase("true"))
+                token = T_TRUE;
+            else if (lexeme.equalsIgnoreCase("false"))
+                token = T_FALSE;
             else {
                 token = T_ID;
             }
@@ -1612,6 +1653,12 @@ public class Compiler {
             case T_DECREMENT:
                 tokenLexeme.append("T_DECREMENT");
                 break;
+            case T_TRUE:
+                tokenLexeme.append("T_TRUE");
+                break;
+            case T_FALSE:
+                tokenLexeme.append("T_FALSE");
+                break;
             case T_END_SOURCE:
                 tokenLexeme.append("T_END_SOURCE");
                 break;
@@ -1677,25 +1724,18 @@ public class Compiler {
                 nodo_1 = semanticStack.pop();
                     if (readingForStep) {
                     String expression = nodo_2.getCodeLowerCase();
-                
                     if(expression.contains("+")){
-                    
                         forStep = expression.substring(
                             expression.indexOf("+") + 1
                         ).trim();
-                    
                     }
-                    else if(expression.contains("-")){
-                    
+                    else if(expression.contains("-")){                    
                         forStep = "-" + expression.substring(
                             expression.indexOf("-") + 1
-                        ).trim();
-                    
+                        ).trim();                    
                     }
                     else{
-                    
                         forStep = "1";
-                    
                     }
                     } else if (!insideForHeader) {
                     codePython.append(tabulation(indentationLevel));
@@ -1861,6 +1901,17 @@ public class Compiler {
                 break;
             case STRING_LITERAL:
                 semanticStack.push(lexeme, ruleNumber);
+                break;
+            case BOOLEAN_LITERAL:
+            if (lexeme.equals("true")) {
+                semanticStack.push("True", ruleNumber);
+            }
+            else if (lexeme.equals("false")) {
+                semanticStack.push("False", ruleNumber);
+            }
+            else {
+                semanticStack.push(lexeme, ruleNumber);
+            }
                 break;
             default:
                 break;

@@ -3,12 +3,15 @@ public class Teste {
         int x, a, b, c, i, contador;
         double f;
         boolean condition;
+        boolean condition2;
         String name;
 
         x = 10;
         name = "FuLaNo";
         System.out.println(name);
 
+        condition = true;
+        condition2 = false;
         b = x * 5;
         c = x / 5;
         a = (b + c) % 7;
