@@ -56,6 +56,16 @@ public class SemanticStackNode {
      * @return Retorna o código objeto empilhado em letras minúsculas
      */
     public String getCodeLowerCase() {
+        if (code != null && code.length() >= 2 && code.startsWith("\"") && code.endsWith("\"")) {
+            return code;
+        }
+        if (code.equals("True") || code.equals("true")) {
+            return "True";
+        }
+    
+        if (code.equals("False") || code.equals("false")) {
+            return "False";
+        }        
         return code.toLowerCase();
     }
 }
