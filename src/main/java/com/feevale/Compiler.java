@@ -147,6 +147,10 @@ import com.feevale.stack.*;
  * =========================================================
  * <NUM> ::= [0-9]+('.'[0-9]+)?
  *
+ * <BOOLEAN_LITERAL> ::= 'true' | 'false'
+ *
+ * <STRING_LITERAL> ::= '"' qualquer sequência de caracteres '"'
+ *
  * <ID> ::= [a-zA-Z_][a-zA-Z0-9_]*
  * 
  */
